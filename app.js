@@ -21,10 +21,10 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // Configure PostgreSQL connection pool
 const pool = new Pool({
     host: "localhost",
-    user: "postgres",
-    password: "santhukutty",
+    user: "codespace",
+    password: "mysecretpassword",
     database: "postgres", // Change to your desired database name
-    port: 5432,
+    port: 5433,
 });
 
 // Automatically create tables if they don't exist
