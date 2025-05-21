@@ -1,9 +1,10 @@
-gitconst express = require("express");
-const { Pool } = require("pg"); // PostgreSQL connection
+const express = require("express");
+const session = require("express-session");
+const { Pool } = require("pg");
 const bodyParser = require("body-parser");
 const path = require("path");
 const multer = require("multer");
-const library = require("./routes/library"); // Routes for library
+const library = require("./routes/library");
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -16,18 +17,39 @@ app.set("view engine", "ejs");
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static("public"));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Configure PostgreSQL connection pool
-const pool = new Pool({
-    host: "localhost",
-    user: "codespace",
-    password: "mysecretpassword",
-    database: "postgres", // Change to your desired database name
-    port: 5433,
+// ✅ Session setup
+app.use(session({
+    secret: "your_super_secret_key", // Change this to a secure random string
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false } // set to true in production with HTTPS
+}));
+
+// ✅ Make session available in EJS
+app.use((req, res, next) => {
+    res.locals.session = req.session;
+    next();
 });
 
-// Automatically create tables if they don't exist
+// ✅ Auth middleware
+function requireLogin(req, res, next) {
+    if (!req.session.user) {
+        return res.redirect("/login");
+    }
+    next();
+}
+
+// ✅ PostgreSQL connection using SSL
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_URqtbcwve0Z5@ep-icy-violet-a53k6c48-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require",
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
+global.pool = pool;
+
+// ✅ Automatically create tables
 const createTables = async () => {
     try {
         await pool.query(`
@@ -36,9 +58,8 @@ const createTables = async () => {
                 title VARCHAR(255) NOT NULL,
                 author VARCHAR(255) NOT NULL,
                 genre VARCHAR(100),
-                photo VARCHAR(255)
+                photo BYTEA
             );
-
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 first_name VARCHAR(255) NOT NULL,
@@ -53,34 +74,46 @@ const createTables = async () => {
         console.error("Error creating tables:", err);
     }
 };
-
-// Run the function to create tables
 createTables();
 
-// Multer configuration for image uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, "uploads/"),
-    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
-});
+// ✅ Multer for buffer uploads
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
-global.pool = pool;
-// Routes for user authentication
-app.get("/login", library.login); // Login page
-app.post("/login", library.loginTo); // Login action
-app.get("/signup", library.signup); // Signup page
-app.post("/signup", library.signupS); // Signup action
-app.post("/logout", library.logout); // Logout action
 
-// Routes for managing books
-app.get("/", library.home); // Home page (list books)
-app.get("/add", library.addBook); // Form to add book
-app.post("/add", upload.single("photo"), library.insertBook); // Add book
-app.get("/update/:id", library.renderUpdateBook); // Form to update book
-app.post("/update/:id", upload.single("photo"), library.updateBook); // Update book
-app.post("/delete/:id", library.deleteBook); // Delete book
-app.post("/search", library.searchBooks); // Search books
+// ✅ Auth routes
+app.get("/login", library.login);
+app.post("/login", library.loginTo);
+app.get("/signup", library.signup);
+app.post("/signup", library.signupS);
+app.post("/logout", library.logout);
 
-// Start the server
+// ✅ Book routes (protected)
+app.get("/", requireLogin, library.home);
+app.get("/add", requireLogin, library.addBook);
+app.post("/add", requireLogin, upload.single("photo"), library.insertBook);
+app.get("/update/:id", requireLogin, library.renderUpdateBook);
+app.post("/update/:id", requireLogin, upload.single("photo"), library.updateBook);
+app.post("/delete/:id", requireLogin, library.deleteBook);
+app.post("/search", requireLogin, library.searchBooks);
+
+// ✅ Serve photo from DB
+app.get("/photo/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query("SELECT photo FROM books WHERE id = $1", [id]);
+        if (result.rows.length && result.rows[0].photo) {
+            res.set("Content-Type", "image/jpeg");
+            res.send(result.rows[0].photo);
+        } else {
+            res.status(404).send("Image not found");
+        }
+    } catch (err) {
+        console.error("Error retrieving image:", err);
+        res.status(500).send("Server error");
+    }
+});
+
+// ✅ Start the server
 app.listen(port, () => {
     console.log(`Library management system running on port ${port}`);
 });
