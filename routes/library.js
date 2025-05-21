@@ -5,6 +5,7 @@ exports.login = (req, res) => {
 };
 
 // Handle login
+// Handle login
 exports.loginTo = (req, res) => {
     const { user_name, password } = req.body;
     const query = "SELECT * FROM users WHERE user_name = $1 AND password = $2";
@@ -13,13 +14,17 @@ exports.loginTo = (req, res) => {
             console.error("Error executing query:", err);
             return res.status(500).json({ message: "An error occurred." });
         }
+
         if (results.rowCount === 1) {
-            res.redirect("/"); // Redirect to homepage
+            // ✅ Set session
+            req.session.user = results.rows[0];
+            res.redirect("/");
         } else {
-            res.status(401).json({ message: "Invalid username or password" });
+            res.status(401).send("Invalid username or password");
         }
     });
 };
+
 
 // Render signup page
 exports.signup = (req, res) => {
@@ -41,8 +46,14 @@ exports.signupS = (req, res) => {
 
 // Handle logout
 exports.logout = (req, res) => {
-    res.redirect("/login");
+    req.session.destroy((err) => {
+        if (err) {
+            console.error("Logout error:", err);
+        }
+        res.redirect("/login");
+    });
 };
+
 
 // Render homepage (book listing)
 exports.home = (req, res) => {
@@ -64,7 +75,8 @@ exports.addBook = (req, res) => {
 // Insert a new book into the database
 exports.insertBook = (req, res) => {
     const { title, author, genre } = req.body;
-    const photo = req.file ? req.file.filename : null;
+    const photo = req.file ? req.file.buffer : null;
+
     const query = "INSERT INTO books (title, author, genre, photo) VALUES ($1, $2, $3, $4)";
     pool.query(query, [title, author, genre, photo], (err) => {
         if (err) {
@@ -74,6 +86,7 @@ exports.insertBook = (req, res) => {
         res.redirect("/"); // Redirect to homepage after adding a book
     });
 };
+
 
 // Render the update book form
 exports.renderUpdateBook = (req, res) => {
@@ -87,20 +100,32 @@ exports.renderUpdateBook = (req, res) => {
         }
     });
 };
-
-// Update a book in the database
 exports.updateBook = (req, res) => {
     const bookId = req.params.id;
     const { title, author, genre } = req.body;
-    const photo = req.file ? req.file.filename : req.body.oldPhoto; // Use the old photo if no new photo is uploaded
-    const query = "UPDATE books SET title = $1, author = $2, genre = $3, photo = $4 WHERE id = $5";
-    pool.query(query, [title, author, genre, photo, bookId], (err) => {
-        if (err) {
-            console.error("Error updating data:", err);
-            return res.status(500).send("Error updating data");
-        }
-        res.redirect("/"); // Redirect to homepage after updating a book
-    });
+
+    if (req.file) {
+        // If a new photo is uploaded, update it
+        const photo = req.file.buffer;
+        const query = "UPDATE books SET title = $1, author = $2, genre = $3, photo = $4 WHERE id = $5";
+        pool.query(query, [title, author, genre, photo, bookId], (err) => {
+            if (err) {
+                console.error("Error updating book with photo:", err);
+                return res.status(500).send("Error updating book");
+            }
+            res.redirect("/");
+        });
+    } else {
+        // No new photo uploaded, don't update the photo
+        const query = "UPDATE books SET title = $1, author = $2, genre = $3 WHERE id = $4";
+        pool.query(query, [title, author, genre, bookId], (err) => {
+            if (err) {
+                console.error("Error updating book without photo:", err);
+                return res.status(500).send("Error updating book");
+            }
+            res.redirect("/");
+        });
+    }
 };
 
 // Delete a book from the database
