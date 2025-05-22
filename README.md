@@ -10,13 +10,6 @@ This Library Management System is a simple project developed to manage book reco
 - Track borrowed books and due dates
 
 ## Technologies Used
-
+- node js
 - JavaScript
 - MySQL
-- Maven
-
-## Installation
-
-1. Clone the repository
-   ```bash
-   git clone https://github.com/MadhanaHarish/Library_Management.git
